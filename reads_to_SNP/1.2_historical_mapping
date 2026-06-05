@@ -1,0 +1,139 @@
+#!/bin/bash
+#SBATCH --cpus-per-task=4            # Number of cores per MPI task
+#SBATCH --mem-per-cpu=2Gb          # Memory (i.e. RAM) per processor
+#SBATCH --time=00:20:00              # Wall time limit (days-hrs:min:sec)
+
+module load jdk/1.8.0_291 picard/2.27.5
+module load mapdamage2/2.2.1
+module load gcc R/3.6.1
+module load adapterremoval/2.3.3
+module load fastp/0.23.4
+module load bwa/0.7.17
+module load samtools/1.12
+
+REFERENCE=$1
+REF_NAME=$2
+ID=$3
+SAMPLE_LIST=$4
+THREADS=$5
+
+OUTdir=$6
+
+mkdir -p ${OUTdir}
+
+BWA_THREADS=${THREADS}
+n=${THREADS}
+PICARD_THREADS=${THREADS}
+MAX_MISINCORP_FREQUENCY=0.4
+READ_PLOT_LENGTH=50
+mapDamage_downSample=10000
+PICARD=/opt/software/picard/2.27.5/picard.jar
+
+
+cat "$SAMPLE_LIST" | grep -E "(\b|_)${ID}(_|\b)" | while read -r line; do
+	SAMPLE=`echo "$line" | cut -d " " -f 2`
+	FILE=`echo "$line" | rev | cut -d "/" -f 1 | rev | cut -d " " -f 3`
+	X=`echo "$line" | cut -d " " -f 2 | sed s'/_1.fq.gz//'`
+	R1=`echo ${X}_1.fq.gz`
+	R2=`echo ${X}_2.fq.gz`
+	OUT=${OUTdir}/${ID}_${FILE}
+
+	echo "START SeqPrep2 at " $(date '+%d_%m_%Y_%H_%M_%S') ${OUT}
+	##BWA - Aligning reads to a reference sequence
+	/projects/mjolnir1/people/nrv690/nrv690.hernan/software/SeqPrep2/SeqPrep2 -f ${R1} -r ${R2} \
+	   -1 ${OUT}_R1_unmerged.fastq.gz -2 ${OUT}_R2_unmerged.fastq.gz \
+	   -3  ${OUT}_R1_unpaired.fastq.gz -4  ${OUT}_R2_unpaired.fastq.gz \
+	   -q 15 -L 30 \
+	   -A AGATCGGAAGAGCACACGTC -B AGATCGGAAGAGCGTCGTGT \
+	   -s ${OUT}_merged.fastq.gz \
+	   -o 15 -m 0.05 \
+	   -C ATCTCGTATGCCGTCTTCTGCTTG -D GATCTCGGTGGTCGCCGTATCATT -S >& ${OUT}_seqprep_output.txt
+
+	zcat ${OUT}_R1_unpaired.fastq.gz ${OUT}_R2_unpaired.fastq.gz | gzip -c > ${OUT}_singleton.fastq.gz
+
+	echo "DONE SeqPrep2 at " $(date '+%d_%m_%Y_%H_%M_%S') ${OUT}
+
+	echo "START BWA at " $(date '+%d_%m_%Y_%H_%M_%S')
+	###BWA - Aligning reads to a reference sequence
+
+	# step 2
+
+merged_read_group='@RG\tID:'${FILE}'_merged\tSM:'${FILE}'\tPL:illumina\tLB:'${FILE}'\tPU:'${SAMPLE}'_merged'
+unmerged_read_group='@RG\tID:'${FILE}'_unmerged\tSM:'${FILE}'\tPL:illumina\tLB:'${FILE}'\tPU:'${SAMPLE}'_unmerged'
+singleton_read_group='@RG\tID:'${FILE}'_singleton\tSM:'${FILE}'\tPL:illumina\tLB:'${FILE}'\tPU:'${SAMPLE}'_singleton'
+
+
+	# step 3
+
+	echo "START samse at " $(date '+%d_%m_%Y_%H_%M_%S')
+	bwa samse ${REFERENCE} \
+	<(bwa aln -l 1024 -n 0.03 -o 2 \
+	-t ${BWA_THREADS} ${REFERENCE} \
+	${OUT}_merged.fastq.gz) ${OUT}_merged.fastq.gz \
+	-r ${merged_read_group} | samtools sort -@ ${n} -o ${OUT}_merged_tmp.bam
+
+	# step 4
+
+	echo "START sampe at " $(date '+%d_%m_%Y_%H_%M_%S')
+	bwa sampe ${REFERENCE}  \
+	<(bwa aln -l 1024 -n 0.03 -o 2 -t ${BWA_THREADS} ${REFERENCE} \
+	${OUT}_R1_unmerged.fastq.gz) \
+	<(bwa aln -l 1024 -n 0.03 -o 2 -t ${BWA_THREADS} ${REFERENCE} \
+	${OUT}_R2_unmerged.fastq.gz) \
+	${OUT}_R1_unmerged.fastq.gz ${OUT}_R2_unmerged.fastq.gz \
+	-r ${unmerged_read_group} | samtools sort -@ ${n} -o ${OUT}_unmerged_tmp.bam
+
+	echo "DONE BWA at " $(date '+%d_%m_%Y_%H_%M_%S')
+
+
+	# step 5
+
+	echo "START samse for R1_unpaired at " $(date '+%d_%m_%Y_%H_%M_%S')
+	bwa samse ${REFERENCE} \
+	<(bwa aln -l 1024 -n 0.03 -o 2 -t ${BWA_THREADS} \
+	${REFERENCE} ${OUT}_singleton.fastq.gz) ${OUT}_singleton.fastq.gz \
+	-r ${singleton_read_group} | samtools sort -@ ${n} -o ${OUT}_singleton_tmp.bam
+
+
+	samtools flagstat ${OUT}_merged_tmp.bam > ${OUTdir}/out_flagstat_${ID}_${FILE}_merged_tmp.txt
+	samtools flagstat ${OUT}_unmerged_tmp.bam > ${OUTdir}/out_flagstat_${ID}_${FILE}_unmerged_tmp.txt
+	samtools flagstat ${OUT}_singleton_tmp.bam> ${OUTdir}/out_flagstat_${ID}_${FILE}_singleton_tmp.txt
+
+
+done
+
+echo "START merging at " $(date '+%d_%m_%Y_%H_%M_%S') "for" ${ID}
+
+# List all BAM files matching the pattern
+bam_files=$(ls ${OUTdir}/*${ID}*_tmp.bam)
+
+echo "list of file for merging" ${bam_files}
+
+# Merge the BAM files using samtools
+samtools merge -@ ${n} ${OUTdir}/${ID}.bam ${bam_files}
+
+# Check if the merge was successful before removing the original BAM files
+if [ $? -eq 0 ]; then
+    # Remove the individual BAM files after merging
+    rm ${bam_files}
+else
+    echo "Error: samtools merge failed. Original BAM files not removed."
+fi
+
+samtools flagstat "${OUTdir}/${ID}".bam > ${OUTdir}/out_flagstat_${ID}.txt
+samtools coverage "${OUTdir}/${ID}".bam > ${OUTdir}/out_coverage_${ID}.txt
+
+echo "START MarkDuplicates at " $(date '+%d_%m_%Y_%H_%M_%S') ${ID}
+
+mkdir -p tmp
+java -jar -Xmx4g -Djava.io.tmpdir=$(pwd)/tmp -XX:ParallelGCThreads=${PICARD_THREADS} $PICARD MarkDuplicates \
+		INPUT="${OUTdir}/${ID}".bam OUTPUT="${OUTdir}/${ID}".rmdup.bam METRICS_FILE="${OUTdir}/${ID}".markdup_metrics.txt \
+		REMOVE_DUPLICATES=true MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=800 VALIDATION_STRINGENCY=LENIENT TMP_DIR=$(pwd)/tmp
+echo "DONE MarkDuplicates at " $(date '+%d_%m_%Y_%H_%M_%S') ${ID}
+
+samtools flagstat "${OUTdir}/${ID}".rmdup.bam > ${OUTdir}/out_flagstat_${ID}.rmdup.txt
+samtools coverage "${OUTdir}/${ID}".rmdup.bam > ${OUTdir}/out_coverage_${ID}.rmdup.txt
+
+echo "START mapDamage at " $(date '+%d_%m_%Y_%H_%M_%S') ${ID}
+   mapDamage -i "${OUTdir}/${ID}".rmdup.bam -r ${REFERENCE} -l 150 -d mapdamage_${ID} -y ${MAX_MISINCORP_FREQUENCY} -n ${mapDamage_downSample} --merge-reference-sequences -m ${READ_PLOT_LENGTH} -t ${REF_NAME}_${ID}
+echo "DONE mapDamage at " $(date '+%d_%m_%Y_%H_%M_%S') ${ID}
