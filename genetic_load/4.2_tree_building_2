@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH --job-name=iqtree
+#SBATCH --output=iqtree-%A-%a.out
+#SBATCH --error=iqtree-%A-%a.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=10G    # memory per cpu-core
+#SBATCH --time=48:00:00
+#SBATCH --partition=cpuqueue
+
+module load iqtree/2.3.3
+
+cat ./chr/*.treefile > falco_high.contree
+iqtree -con falco_high.contree --prefix falco_high_con
+iqtree -s ../vcf/chr/falco_high_noW_OY*.phy --prefix falco_high_contree -te falco_high_con.tree -T 8 --mem 79G -m TVM+F+G4
