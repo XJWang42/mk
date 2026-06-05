@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --job-name=snpeff
+#SBATCH --output=snpeff.out
+#SBATCH --error=snpeff.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=6G    # memory per cpu-core
+#SBATCH --time=23:00:00
+
+sample="falco_toLK_low_snp_notrans"
+#sample="falco_toLK_high_snp"
+
+module load openjdk/11.0.0
+
+java -Xmx20g -XX:ParallelGCThreads=4 -jar ~/software/snpeff-5.2/snpEff.jar bFalNau1 ../vcf_toLK/falco_low_toLK_notrans.vcf.gz | bgzip > falco_toLK_low_snpeff.vcf.gz
+java -Xmx20g -XX:ParallelGCThreads=4 -jar ~/software/snpeff-5.2/snpEff.jar bFalNau1 ../vcf_toLK/falco_high_toLK_all.vcf.gz | bgzip > falco_toLK_high_snpeff.vcf.gz
+bcftools view -R ../iqtree/falco_high_toLK_snp.ref.bed ${sample}_snpeff.vcf.gz | bcftools stats -s - -i 'ANN~"HIGH"' | grep "^PSC" > $sample.ref.high.count
+bcftools view -R ../iqtree/falco_high_toLK_snp.ref.bed -e 'ANN~"HIGH"' ${sample}_snpeff.vcf.gz | bcftools stats -s - -i 'ANN~"MODERATE" & AC>0' | grep "^PSC" > $sample.nofix.ref.moderate.count
+bcftools view -R ../iqtree/falco_high_toLK_snp.ref.bed -e 'ANN~"HIGH" | ANN~"MODERATE"' ${sample}_snpeff.vcf.gz | bcftools stats -s - -i 'ANN~"LOW" & AC>0' | grep "^PSC" > $sample.nofix.ref.low.count
+bcftools view -R ../iqtree/falco_high_toLK_snp.ref.bed -e 'ANN~"HIGH" | ANN~"MODERATE" | ANN~"LOW"' ${sample}_snpeff.vcf.gz | bcftools stats -s - -i 'ANN~"MODIFIER" & AC>0' | grep "^PSC" > $sample.nofix.ref.modifier.count
