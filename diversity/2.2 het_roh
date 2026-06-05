@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH --job-name=roh
+#SBATCH --output=roh.out
+#SBATCH --error=orh.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=4G    # memory per cpu-core
+#SBATCH --time=8:00:00
+#SBATCH --partition=cpuqueue
+
+module load gsl/2.5
+module load perl
+module load bcftools
+
+bcftools stats -s - falco_low_snp_noW.vcf.gz > falco_low_snp_noW.stats
+bcftools +fill-tags falco_low_snp_noW.vcf.gz -- -t AF | bcftools roh --AF-tag AF -o falco_low_snp_noW.roh
+grep RG falco_low_snp_noW.roh | awk '{if ($6>1000000) print $0}' OFS='\t' > falco_low_snp_noW.1M.roh
+cat falco_low_depth.list | while read line; do awk -v line=$line '{if ($2==line) print}' falco_low_snp_noW.1m.roh | awk '{sum+=$6}END{print sum}'; done
+
+cat ../low_depth.list | while read line
+do
+	bedtools intersect -b roh_bed/falco_low_all_snp_notrans_noW.roh.$line.bed -a DP_bed/${line}_DP4.bed | awk '{sum+=$3-$2+1}END{print sum}' >> falco_low_roh_sites.count
+	bcftools stats -s $line -R roh_bed/falco_low_all_snp_notrans_noW.roh.$line.bed falco_low_all_snp_notrans_noW.vcf.gz | grep PSC | tail -n 1 >> falco_low_all_notrans_noW.roh.stats
+done
