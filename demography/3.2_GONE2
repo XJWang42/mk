@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH --job-name=gone2
+#SBATCH --output=gone2-%A.out
+#SBATCH --error=gone2-%A.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=8G    # memory per cpu-core
+#SBATCH --time=24:00:00
+#SBATCH --partition=cpuqueue
+
+
+module load gsl/2.5 perl bcftools
+
+bcftools view -r OY723433.1,OY723434.1,OY723435.1,OY723436.1,OY723437.1,OY723438.1,OY723440.1,OY723441.1,OY723442.1,OY723443.1,OY723444.1,OY723445.1,OY723446.1,OY723447.1,OY723448.1 ../../vcf/mk_high_snp_noW.vcf.gz | bcftools view -i "AC>0" > mk_high.gone.r2.vcf
+
+~/software/GONE2/gone2 -g 0 -r 2 -o mk_high_gone2 mk_high.gone.r2.vcf
+
+cat ../high_depth.list | while read sample
+do
+    vcftools --vcf mk_high.gone.r2.vcf --remove-indv $sample --recode --out jackknife_${sample}.gone.r2
+    ~/software/GONE2/gone2 -r 2  -o jackknife_${sample}_gone2 jackknife_${sample}.gone.r2.recode.vcf
+done
