@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --job-name=bed
+#SBATCH --output=bed.%A.%a.out
+#SBATCH --error=bed.%A.%a.err
+#SBATCH --array=1-71%8
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=8G    # memory per cpu-core
+#SBATCH --time=12:00:00
+#SBATCH --partition=cpuqueue
+
+
+module load perl
+module load gsl/2.5
+module load bcftools
+
+sample=$(sed -n "$SLURM_ARRAY_TASK_ID"p ../falco_high_depth.list | awk '{print $1}')
+
+bcftools query -i 'FORMAT/DP<10 || FORMAT/GQ<30' -f '%CHROM\t%POS\t%INFO/END\n' ../../gvcf_falco/${sample}.g.vcf.gz | awk -F '\t' '{if($3=="."){print $1"\t"$2"\t"$2}else{print $0}}' > ${sample}_mask.bed
+echo $sample
+awk '{sum+=$3-$2+1}END{print sum}' ${sample}_mask.bed
+
+sample=$(sed -n "$SLURM_ARRAY_TASK_ID"p ../falco_low_depth.list | awk '{print $1}')
+bcftools query -i 'FORMAT/DP<4 || FORMAT/GQ<12' -f '%CHROM\t%POS\t%INFO/END\n' ../../gvcf_falco/${sample}.g.vcf.gz | awk -F '\t' '{if($3=="."){print $1"\t"$2"\t"$2}else{print $0}}' > ${sample}_mask.bed
+echo $sample
+awk '{sum+=$3-$2+1}END{print sum}' ${sample}_mask.bed
