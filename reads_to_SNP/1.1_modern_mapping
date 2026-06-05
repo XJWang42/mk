@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH --job-name=fq2bam
+#SBATCH --output=fq2bam.%A.%a.out
+#SBATCH --error=fq2bam.%A.%a.err
+#SBATCH --array=1-49%2
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=8G    # memory per cpu-core
+#SBATCH --time=04:00:00
+#SBATCH --partition=gpuqueue
+#SBATCH --gres=gpu:1
+
+ref_dir="/projects/erode/data/reference_genomes/Mauritius/chrom_level_realtives/0_falcons/Falco_punctatus/GCA_963210335.1/"
+ref_fasta="GCA_963210335.1_bFalPun1.1_genomic.fasta"
+input_dir="/projects/erode/data/fastq_files/Mauritius/mk_fastq/"
+output_dir="/projects/erode/people/bth331/kestrel/bam/"
+sample_name=$(sed -n "$SLURM_ARRAY_TASK_ID"p mk_fq2.list | awk -F'\t' '{print $1}')
+in_fq=$(sed -n "$SLURM_ARRAY_TASK_ID"p mk_fq2.list | awk -F'\t' '{print $3}')
+
+singularity run \
+        --bind ${ref_dir}:/ref \
+        --bind ${input_dir}:/input \
+        --bind ${output_dir}:/output \
+        --nv /projects/erode/apps/gpu/parabricks.sif \
+	pbrun fq2bam \
+        --ref /ref/${ref_fasta} \
+        --read-group-sm $sample_name \
+        --read-group-lb "X204SC22112691" \
+        --read-group-pl "Illumina" \
+        --read-group-id-prefix $sample_name \
+        $in_fq  \
+        --out-bam /output/${sample_name}.bam \
+        --tmp-dir /output/tmp
