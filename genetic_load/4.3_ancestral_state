@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=ancestral
+#SBATCH --output=ancestral-%A-%a.out
+#SBATCH --error=ancestral-%A-%a.err
+#SBATCH --ntasks=1
+#SBATCH --array=1-76%8
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=16G    # memory per cpu-core
+#SBATCH --time=4:00:00
+#SBATCH --partition=cpuqueue
+
+chr=$(sed -n "$SLURM_ARRAY_TASK_ID"p ../vcf/falco_low_snp_chr.list | awk '{print $1}')
+
+module load iqtree/2.3.3
+
+iqtree -s ../vcf/chr/falco_high_noW_${chr}.min4.phy -m TVM+F+G4 -asr -te falco_high_contree.treefile --mem 60G -T 4
+awk '{if ($1=="Node6") {print $0}}' ../vcf/chr/falco_high_noW_${chr}.min4.phy.state | awk '{max=$4; for(i=5;i<=NF; i++) {if($i>max){max=$i}}; if (max>=0.95) {print $2"\t"$3} else {print $2"\tN"}}' | sed "s/^/$chr\t/g" > an_falco_high_${chr}.list
