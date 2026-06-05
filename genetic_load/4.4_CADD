@@ -1,0 +1,80 @@
+#!/bin/bash
+#SBATCH --job-name=cadd
+#SBATCH --output=cadd.out
+#SBATCH --error=cadd.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=10G    # memory per cpu-core
+#SBATCH --time=24:00:00
+
+#group="falco_low_snp_noW"
+group="falco_low_toLK_snp"
+#cadd_list="../CADD_mk/merged_chr/all_chr_1_based_mkCADD.bed.gz"
+cadd_list="../CADD_lk/merged_chr/all_chr_1_based_lkCADD.bed.gz"
+
+module load perl
+module load gsl/2.5
+module load bcftools
+
+for i in {1..33}
+do
+	sort -k1,1 -k2,2n /home/bth331/test/chicken/CADD_lk/filtered/chr${i}_lkCADD.bed | bedtools intersect -a - -b ${group}.ref.bed -wb | awk '{if ($4==$10 && $5==$11) print}' | cut -f 1,2,3,4,5,6 >> cadd_ref_high_tmp.bed
+        sort -k1,1 -k2,2n /home/bth331/test/chicken/CADD_lk/filtered/chr${i}_lkCADD.bed | bedtools intersect -a - -b ${group}.alt.bed -wb | awk '{if ($4==$11 && $5==$10) print}' | cut -f 1,2,3,4,5,6 >> cadd_alt_high_tmp.bed
+done
+
+cat ../vcf_toLK/Falco_naumanni_500KbScaffolds.list | while read line
+do
+	grep $line cadd_ref_high_tmp.bed | sort -k2,2n >> cadd_ref_high.bed
+	grep $line cadd_alt_high_tmp.bed | sort -k2,2n >> cadd_alt_high.bed
+done
+
+awk '{if ($6>=20) print}' cadd_ref_high.bed > cadd_ref_high_20.bed
+awk '{if ($6>=20) print}' cadd_alt_high.bed > cadd_alt_high_20.bed
+awk '{if ($6<20 && $6>=13.01) print}' cadd_ref_high.bed > cadd_ref_high_13.bed
+awk '{if ($6<20 && $6>=13.01) print}' cadd_alt_high.bed > cadd_alt_high_13.bed
+awk '{if ($6<13.01 && $6>=10) print}' cadd_ref_high.bed > cadd_ref_high_10.bed
+awk '{if ($6<13.01 && $6>=10) print}' cadd_alt_high.bed > cadd_alt_high_10.bed
+awk '{if ($6<10 && $6>=6.02) print}' cadd_ref_high.bed > cadd_ref_high_6.bed
+awk '{if ($6<10 && $6>=6.02) print}' cadd_alt_high.bed > cadd_alt_high_6.bed
+awk '{if ($6<6.02 && $6>=3.01) print}' cadd_ref_high.bed > cadd_ref_high_3.bed
+awk '{if ($6<6.02 && $6>=3.01) print}' cadd_alt_high.bed > cadd_alt_high_3.bed
+awk '{if ($6<3.01) print}' cadd_ref_high.bed > cadd_ref_high_0.bed
+awk '{if ($6<3.01) print}' cadd_alt_high.bed > cadd_alt_high_0.bed
+
+bcftools view -R cadd_ref_high_20.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_ref_cadd_20.vcf.gz
+tabix ${group}_ref_cadd_20.vcf.gz
+bcftools view -R cadd_alt_high_20.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_alt_cadd_20.vcf.gz
+tabix ${group}_alt_cadd_20.vcf.gz
+bcftools view -R cadd_ref_high_13.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_ref_cadd_13.vcf.gz
+tabix ${group}_ref_cadd_13.vcf.gz
+bcftools view -R cadd_alt_high_13.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_alt_cadd_13.vcf.gz
+tabix ${group}_alt_cadd_13.vcf.gz
+bcftools view -R cadd_ref_high_10.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_ref_cadd_10.vcf.gz
+tabix ${group}_ref_cadd_10.vcf.gz
+bcftools view -R cadd_alt_high_10.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_alt_cadd_10.vcf.gz
+tabix ${group}_alt_cadd_10.vcf.gz
+bcftools view -R cadd_ref_high_6.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_ref_cadd_6.vcf.gz
+tabix ${group}_ref_cadd_6.vcf.gz
+bcftools view -R cadd_alt_high_6.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_alt_cadd_6.vcf.gz
+tabix ${group}_alt_cadd_6.vcf.gz
+bcftools view -R cadd_ref_high_3.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_ref_cadd_3.vcf.gz
+tabix ${group}_ref_cadd_3.vcf.gz
+bcftools view -R cadd_alt_high_3.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_alt_cadd_3.vcf.gz
+tabix ${group}_alt_cadd_3.vcf.gz
+bcftools view -R cadd_ref_high_0.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_ref_cadd_0.vcf.gz
+tabix ${group}_ref_cadd_13.vcf.gz
+bcftools view -R cadd_alt_high_0.bed ../vcf_toLK/falco_low_toLK_all.vcf.gz | bgzip > ${group}_alt_cadd_0.vcf.gz
+tabix ${group}_alt_cadd_0.vcf.gz
+
+bcftools view -S MK_low.list ${group}_ref_cadd_20.vcf.gz | bcftools stats -i "AN/AC>1" -s - | grep ^PSC > ${group}_ref_nofix_0.01.stat
+bcftools view -S MK_low.list ${group}_alt_cadd_20.vcf.gz | bcftools stats -i "AC>0" -s - | grep ^PSC > ${group}_alt_nofix_0.01.stat
+bcftools view -S MK_low.list ${group}_ref_cadd_13.vcf.gz | bcftools stats -i "AN/AC>1" -s - | grep ^PSC > ${group}_ref_nofix_0.05.stat
+bcftools view -S MK_low.list ${group}_alt_cadd_13.vcf.gz | bcftools stats -i "AC>0" -s - | grep ^PSC > ${group}_alt_nofix_0.05.stat
+bcftools view -S MK_low.list ${group}_ref_cadd_10.vcf.gz | bcftools stats -i "AN/AC>1" -s - | grep ^PSC > ${group}_ref_nofix_0.1.stat
+bcftools view -S MK_low.list ${group}_alt_cadd_10.vcf.gz | bcftools stats -i "AC>0" -s - | grep ^PSC > ${group}_alt_nofix_0.1.stat
+bcftools view -S MK_low.list ${group}_ref_cadd_6.vcf.gz | bcftools stats -i "AN/AC>1" -s - | grep ^PSC > ${group}_ref_nofix_0.25.stat
+bcftools view -S MK_low.list ${group}_alt_cadd_6.vcf.gz | bcftools stats -i "AC>0" -s - | grep ^PSC > ${group}_alt_nofix_0.25.stat
+bcftools view -S MK_low.list ${group}_ref_cadd_3.vcf.gz | bcftools stats -i "AN/AC>1" -s - | grep ^PSC > ${group}_ref_nofix_0.5.stat
+bcftools view -S MK_low.list ${group}_alt_cadd_3.vcf.gz | bcftools stats -i "AC>0" -s - | grep ^PSC > ${group}_alt_nofix_0.5.stat
+bcftools view -S MK_low.list ${group}_ref_cadd_0.vcf.gz | bcftools stats -i "AN/AC>1" -s - | grep ^PSC > ${group}_ref_nofix_1.stat
+bcftools view -S MK_low.list ${group}_alt_cadd_0.vcf.gz | bcftools stats -i "AC>0" -s - | grep ^PSC > ${group}_alt_nofix_1.stat
