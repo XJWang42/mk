@@ -1,0 +1,37 @@
+#!/bin/bash
+#SBATCH --job-name=call
+#SBATCH --output=call.%A.%a.out
+#SBATCH --error=call.%A.%a.err
+#SBATCH --array=1-315%8
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=8G    # memory per cpu-core
+#SBATCH --time=96:00:00
+#SBATCH --partition=cpuqueue
+
+ref_fasta="/projects/erode/data/reference_genomes/Mauritius/chrom_level_realtives/0_falcons/Falco_punctatus/GCA_963210335.1/GCA_963210335.1_bFalPun1.1_genomic.fasta"
+input_dir="/projects/erode/people/bth331/kestrel/bam/"
+chr_name=$(sed -n "$SLURM_ARRAY_TASK_ID"p ${input_dir}mk_scaffold.list | awk '{print $1}')
+
+module load python/3.9.5
+module load openjdk/17.0.8
+module load gatk/4.4.0.0
+module load perl
+module load gsl/2.5
+module load bcftools
+
+gatk --java-options "-Xmx32g -Xms8g -XX:ParallelGCThreads=4 -DGATK_STACKTRACE_ON_USER_EXCEPTION=true" GenotypeGVCFs -R $ref_fasta -V gendb:///projects/erode/people/bth331/kestrel/genDB_falco/${chr_name} -O falco/falco_all_${chr_name}.vcf.gz --tmp-dir ./tmp
+gatk --java-options "-Xmx32g -Xms8g -XX:ParallelGCThreads=4" VariantFiltration -R $ref_fasta -V falco/falco_all_${chr_name}.vcf.gz -O falco_filter/falco_f_${chr_name}.vcf.gz --tmp-dir ./tmp --filter-name "QD" -filter "QD<2.0" --filter-name "SOR" -filter "SOR>3.0" --filter-name "FS" -filter "FS>60.0" --filter-name "MQ" -filter "MQ<40.0" --filter-name "MQRS" -filter "MQRankSum<-12.5" --filter-name "RPRS" -filter "ReadPosRankSum<-8.0" --verbosity ERROR
+vcftools --gzvcf falco_filter/falco_filter.vcf.gz \
+        --keep ../low_depth.list \
+        --not-chr OY723439.1 \
+	--maf 0.001 \
+        --maxDP 30 \
+        --minDP 4 \
+	--minGQ 12 \
+        --out falco_low_all \
+        --recode \
+        --remove-filtered-geno-all \
+        --remove-filtered-all
+bcftools view -i 'N_ALT==1 & MAC>1 & TYPE="snp"' falco_low_all.vcf.gz | awk -F '\t' '(!(($4 == "A" && $5 == "G") || ($4 == "G" && $5 == "A") || ($4 == "C" && $5 == "T") || ($4 == "T" && $5 == "C")) || $0 ~ /^#/ )' | bgzip > falco_low_all_snp_notrans.vcf.gz
+tabix falco_low_all_snp_notrans.vcf.gz
