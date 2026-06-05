@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH --job-name=split
+#SBATCH --output=split.out
+#SBATCH --error=spit.err
+#SBATCH --array=1-76%10
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=2G    # memory per cpu-core
+#SBATCH --time=1:00:00
+#SBATCH --partition=cpuqueue
+
+chr_name=$(sed -n "$SLURM_ARRAY_TASK_ID"p  falco_low_snp_chr.list| awk '{print $1}')
+
+module load perl
+module load gsl/2.5
+module load bcftools
+module load iqtree/2.3.3
+
+bcftools view -r $chr_name mk_high_all_snp_noW.vcf.gz | bgzip > ./chr/mk_high_noW_${chr_name}.vcf.gz
+tabix ./chr/mk_high_noW_${chr_name}.vcf.gz
+
+python ~/erode/people/bth331/software/vcf2phylip/vcf2phylip.py -i ./chr/falco_high_noW_${chr_name}.vcf.gz
+
+iqtree -s ../vcf/falco_high_noW_${chr}.min4.phy -m TESTONLY -T 8 --prefix falco_high_${chr}
+iqtree -s ../vcf/falco_high_noW_${chr}.min4.phy --prefix ./chr/falco_high_${chr} -T 8 --mem 79G -m TVM+F+G4 --redo-tree -B 1000
