@@ -1,0 +1,34 @@
+#!/bin/bash
+#SBATCH --job-name=w_catch
+#SBATCH --output=w_catch.%A.%a.out
+#SBATCH --error=w_catch.%A.%a.err
+#SBATCH --array=1-68%4
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=8G    # memory per cpu-core
+#SBATCH --time=06:00:00
+
+
+module load gsl/2.5
+module load perl
+module load bcftools
+module load samtools
+
+ref="/projects/erode/data/reference_genomes/Mauritius/chrom_level_realtives/0_falcons/Falco_punctatus/GCA_963210335.1/GCA_963210335.1_bFalPun1.1_genomic.fasta"
+#sample=$(sed -n "$SLURM_ARRAY_TASK_ID"p  ~/kestrel/vcf/falco_high_depth.list | sed "s/_h//g")
+sample=$(sed -n "$SLURM_ARRAY_TASK_ID"p  ~/kestrel/MK_low.list)
+#bam=$(sed -n "$SLURM_ARRAY_TASK_ID"p mk_low_toLK.bam.list | awk -F'\t' '{print $2}')
+
+#samtools view ../../bam_toLK/${sample}_toLK_h.bam "NC_054079.1" | cut -f 1 > ${sample}_toLK.W.reads.list
+#samtools view -N ${sample}_toLK.W.reads.list -o ${sample}.W.bam ../../bam/${sample}_h.bam
+
+
+#bcftools mpileup -f $ref -q 20 $sample.W.bam | bcftools call -mv -Ov | bcftools view | bgzip > $sample.toLK.W.vcf.gz
+#tabix $sample.toLK.W.vcf.gz
+
+bcftools view -R $sample.toLK.W.vcf.gz -s ${sample}_h ../../vcf/falco_low_all_snp.vcf.gz | bgzip > ${sample}_l.W.snp.vcf.gz
+#bcftools stats -s ${sample}_h ${sample}_h.W.snp.notrans.vcf.gz | grep PSC
+
+bcftools query -i "AC>0" -f '%CHROM\t%POS\n' ${sample}_l.W.snp.vcf.gz > ${sample}_l.W.snp.list
+bcftools view -s ${sample} ../../vcf/falco_low_all_snp.vcf.gz | bcftools filter -M ${sample}_l.W.snp.list -s "W" -S. | bgzip > ${sample}_low_snp_noW.vcf.gz
+tabix ${sample}_low_snp_noW.vcf.gz
