@@ -7,21 +7,23 @@ library(scales)
 
 het_mk<-read.table("mk_low_het.txt", h=T, sep="\t")
 
-sim_targets <- data.frame(group = c("early", "middle", "recent"),mean_GL = c(1.8199, 1.3525, 1.2100))
+sim_targets <- data.frame(group = c("early", "middle", "recent"),mean_GL = c(0.7881, 0.6708, 0.6154))
 df <- merge(het_mk, sim_targets, by = "group", all.x = TRUE)
-fit<-lm(mean_GL ~ high_all_corr + moderate_all_corr - 1, data = df)
-coef(fit)
-fit<-lm(mean_GL ~ cadd_01_total_corr + cadd_05_total_corr - 1, data = df[which(df$mean_GL>1),])
+fit_snpeff<-lm(mean_GL ~ high_all_corr + moderate_all_corr - 1, data = df)
+coef(fit_snpeff)
+fit_cadd<-lm(mean_GL ~ cadd_01_total_corr + cadd_05_total_corr - 1, data = df)
+coef(fit_cadd)
 
-het_mk$realised_snpeff <- het_mk$high_hom_corr*0.004006967 + het_mk$moderate_hom_corr*0.003411724 
-het_mk$masked_snpeff <- het_mk$high_het_corr*0.004006967/2 + het_mk$moderate_het_corr*0.003411724/2
+#test for load accumulate
+het_mk$realised_snpeff <- het_mk$high_hom_corr*coef(fit_snpeff)[[1]] + het_mk$moderate_hom_corr*coef(fit_snpeff)[[2]] 
+het_mk$masked_snpeff <- het_mk$high_het_corr*coef(fit_snpeff)[[1]]/2 + het_mk$moderate_het_corr*coef(fit_snpeff)[[2]]/2
 het_mk$total_snpeff <- het_mk$realised_snpeff + het_mk$masked_snpeff
 
-het_mk$realised_cadd <- het_mk$cadd_01_hom_corr*0.037198194 + het_mk$cadd_05_hom_corr*0.002187137 
-het_mk$masked_cadd <- het_mk$cadd_01_het_corr*0.037198194/2 + het_mk$cadd_05_het_corr*0.002187137/2
+het_mk$realised_cadd <- het_mk$cadd_01_hom_corr*coef(fit_cadd)[[1]] + het_mk$cadd_05_hom_corr*coef(fit_cadd)[[2]] 
+het_mk$masked_cadd <- het_mk$cadd_01_het_corr*coef(fit_cadd)[[1]]/2 + het_mk$cadd_05_het_corr*coef(fit_cadd)[[2]]/2
 het_mk$total_cadd <- het_mk$realised_cadd + het_mk$masked_cadd
 
-effect_df <- df[which(df$mean_GL>1),]
+effect_df <- df[which(df$mean_GL>0),]
 loo_results <- lapply(1:nrow(effect_df), function(i) {
   temp_df <- effect_df[-i, ]
   fit_i <- lm(mean_GL ~ high_all_corr + moderate_all_corr - 1, data = temp_df)
