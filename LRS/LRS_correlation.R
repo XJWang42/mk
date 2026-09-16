@@ -89,3 +89,86 @@ plot_prediction(model_cadd, "hom_load_CADD") +
     y = "Predicted Lifetime Reproductive Success",
     title = "Homozygous load (CADD)"
   )
+
+set.seed(123)
+
+predictors <- c("het_scaled", "roh_scaled", "snpeff_scaled", "cadd_scaled")
+expected_direction <- c(1, -1, -1, -1)
+
+permutation_results <- list()
+leave_one_out_results <- list()
+
+for (k in seq_along(predictors)) {
+  predictor <- predictors[k]
+  direction <- expected_direction[k]
+
+  dat <- life_data[which(life_data$bred_in_2024 == 0),
+                   c("LRS", "breeding_years", "sex_genome", predictor)]
+  dat <- na.omit(dat)
+
+  formula <- reformulate(
+    c(predictor, "breeding_years", "sex_genome"),
+    response = "LRS"
+  )
+
+  observed_model <- glm.nb(formula, data = dat)
+  observed <- summary(observed_model)$coefficients[predictor, ]
+  observed_beta <- observed["Estimate"]
+  observed_z <- observed["z value"]
+
+  perm_beta <- numeric(10000)
+  perm_z <- numeric(10000)
+
+  for (b in seq_len(10000)) {
+    perm_dat <- dat
+
+    for (sex in unique(dat$sex_genome)) {
+      rows <- which(dat$sex_genome == sex)
+      perm_dat[[predictor]][rows] <-
+        dat[[predictor]][rows][sample.int(length(rows))]
+    }
+
+    perm_model <- glm.nb(formula, data = perm_dat)
+    estimates <- summary(perm_model)$coefficients[predictor, ]
+
+    perm_beta[b] <- estimates["Estimate"]
+    perm_z[b] <- estimates["z value"]
+  }
+
+  p_beta <- mean(
+    direction * perm_beta > 0 &
+      direction * perm_beta >= abs(observed_beta)
+  )
+  p_z <- mean(
+    direction * perm_z > 0 &
+      direction * perm_z >= abs(observed_z)
+  )
+
+  permutation_results[[predictor]] <- data.frame(
+    permutation = seq_len(10000),
+    beta = perm_beta,
+    z = perm_z
+  )
+
+  print(data.frame(
+    predictor = predictor,
+    observed_beta = observed_beta,
+    observed_z = observed_z,
+    permutation_p_beta = p_beta,
+    permutation_p_z = p_z
+  ))
+
+  loo_beta <- numeric(nrow(dat))
+
+  for (i in seq_len(nrow(dat))) {
+    loo_model <- glm.nb(formula, data = dat[-i, ])
+    loo_beta[i] <- coef(loo_model)[predictor]
+  }
+
+  leave_one_out_results[[predictor]] <- data.frame(
+    omitted_individual = rownames(dat),
+    beta = loo_beta
+  )
+
+  print(leave_one_out_results[[predictor]])
+}
