@@ -35,3 +35,15 @@ vcftools --gzvcf falco_filter/falco_filter.vcf.gz \
         --remove-filtered-all
 bcftools view -i 'N_ALT==1 & MAC>1 & TYPE="snp"' falco_low_all.vcf.gz | awk -F '\t' '(!(($4 == "A" && $5 == "G") || ($4 == "G" && $5 == "A") || ($4 == "C" && $5 == "T") || ($4 == "T" && $5 == "C")) || $0 ~ /^#/ )' | bgzip > falco_low_all_snp_notrans.vcf.gz
 tabix falco_low_all_snp_notrans.vcf.gz
+
+vcftools --gzvcf falco_high.vcf.gz \
+        --keep falco_high_depth.list \
+        --not-chr OY723439.1 \
+	--maf 0.001 \
+        --maxDP 120 \
+        --minDP 8 \
+	--minGQ 20 \
+        --out falco_high_f \
+        --recode \
+        --remove-filtered-geno-all \
+        --remove-filtered-all
